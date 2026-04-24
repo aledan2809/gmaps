@@ -15,6 +15,10 @@ export class GMapsClient {
    * Search for places by text query (e.g., "World Class gym Bucharest")
    */
   async searchPlaces(options: PlaceSearchOptions): Promise<PlaceResult[]> {
+    if (!options.query || typeof options.query !== 'string' || options.query.trim() === '') {
+      throw new GMapsError('Query parameter is required and cannot be empty', 'INVALID_REQUEST')
+    }
+
     const params = new URLSearchParams({
       query: options.query,
       key: this.apiKey,
@@ -37,20 +41,34 @@ export class GMapsClient {
       throw new GMapsError(`Places search failed: ${data.status}`, data.status)
     }
 
-    return (data.results || []).map((r: Record<string, unknown>) => ({
-      placeId: r.place_id as string,
-      name: r.name as string,
-      address: r.formatted_address as string,
-      lat: (r.geometry as { location: { lat: number; lng: number } }).location.lat,
-      lng: (r.geometry as { location: { lat: number; lng: number } }).location.lng,
-      types: r.types as string[],
-    }))
+    return (data.results || []).map((r: Record<string, unknown>) => {
+      const geometry = r.geometry as { location?: { lat: number; lng: number } } | undefined
+      if (!geometry?.location?.lat || !geometry?.location?.lng) {
+        throw new GMapsError('Invalid place result: missing geometry location', 'INVALID_RESPONSE')
+      }
+
+      return {
+        placeId: r.place_id as string,
+        name: r.name as string,
+        address: r.formatted_address as string,
+        lat: geometry.location.lat,
+        lng: geometry.location.lng,
+        types: r.types as string[],
+      }
+    })
   }
 
   /**
    * Search for nearby places by type
    */
   async searchNearby(lat: number, lng: number, radius: number = 2000, type: string = 'gym'): Promise<PlaceResult[]> {
+    if (typeof lat !== 'number' || typeof lng !== 'number' || isNaN(lat) || isNaN(lng)) {
+      throw new GMapsError('Latitude and longitude must be valid numbers', 'INVALID_REQUEST')
+    }
+    if (typeof radius !== 'number' || radius <= 0 || radius > 50000) {
+      throw new GMapsError('Radius must be a positive number not exceeding 50000 meters', 'INVALID_REQUEST')
+    }
+
     const params = new URLSearchParams({
       location: `${lat},${lng}`,
       radius: String(radius),
@@ -65,20 +83,31 @@ export class GMapsClient {
       throw new GMapsError(`Nearby search failed: ${data.status}`, data.status)
     }
 
-    return (data.results || []).map((r: Record<string, unknown>) => ({
-      placeId: r.place_id as string,
-      name: r.name as string,
-      address: r.formatted_address as string || (r.vicinity as string) || '',
-      lat: (r.geometry as { location: { lat: number; lng: number } }).location.lat,
-      lng: (r.geometry as { location: { lat: number; lng: number } }).location.lng,
-      types: r.types as string[],
-    }))
+    return (data.results || []).map((r: Record<string, unknown>) => {
+      const geometry = r.geometry as { location?: { lat: number; lng: number } } | undefined
+      if (!geometry?.location?.lat || !geometry?.location?.lng) {
+        throw new GMapsError('Invalid place result: missing geometry location', 'INVALID_RESPONSE')
+      }
+
+      return {
+        placeId: r.place_id as string,
+        name: r.name as string,
+        address: r.formatted_address as string || (r.vicinity as string) || '',
+        lat: geometry.location.lat,
+        lng: geometry.location.lng,
+        types: r.types as string[],
+      }
+    })
   }
 
   /**
    * Geocode an address to lat/lng
    */
   async geocode(address: string): Promise<GeocodingResult | null> {
+    if (!address || typeof address !== 'string' || address.trim() === '') {
+      throw new GMapsError('Address parameter is required and cannot be empty', 'INVALID_REQUEST')
+    }
+
     const params = new URLSearchParams({
       address,
       key: this.apiKey,
@@ -93,6 +122,10 @@ export class GMapsClient {
     }
 
     const result = data.results[0]
+    if (!result?.geometry?.location?.lat || !result?.geometry?.location?.lng) {
+      throw new GMapsError('Invalid geocoding result: missing geometry location', 'INVALID_RESPONSE')
+    }
+
     return {
       placeId: result.place_id,
       address: result.formatted_address,
@@ -105,6 +138,10 @@ export class GMapsClient {
    * Reverse geocode lat/lng to address
    */
   async reverseGeocode(options: ReverseGeocodeOptions): Promise<GeocodingResult | null> {
+    if (typeof options.lat !== 'number' || typeof options.lng !== 'number' || isNaN(options.lat) || isNaN(options.lng)) {
+      throw new GMapsError('Latitude and longitude must be valid numbers', 'INVALID_REQUEST')
+    }
+
     const params = new URLSearchParams({
       latlng: `${options.lat},${options.lng}`,
       key: this.apiKey,
@@ -119,6 +156,10 @@ export class GMapsClient {
     }
 
     const result = data.results[0]
+    if (!result?.geometry?.location?.lat || !result?.geometry?.location?.lng) {
+      throw new GMapsError('Invalid reverse geocoding result: missing geometry location', 'INVALID_RESPONSE')
+    }
+
     return {
       placeId: result.place_id,
       address: result.formatted_address,

@@ -1,8 +1,13 @@
 /**
  * Request geolocation permission and return current position
+ * Only available in browser environments
  */
 export function getCurrentPosition(options?: PositionOptions): Promise<GeolocationPosition> {
   return new Promise((resolve, reject) => {
+    if (typeof navigator === 'undefined') {
+      reject(new Error('getCurrentPosition is only available in browser environments'))
+      return
+    }
     if (!navigator.geolocation) {
       reject(new Error('Geolocation not supported'))
       return
